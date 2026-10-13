@@ -15,7 +15,10 @@ for f in Resources/*(N); do [[ $f == Resources/Info.plist ]] || cp "$f" "$app/Co
 swiftc -O -o "$app/Contents/MacOS/ScreenshotClipboard" Sources/*.swift
 # A stable identity keeps macOS privacy grants across rebuilds; ad-hoc signatures change with every build.
 identity="Screenshot Clipboard Local Signing"
-security find-certificate -c "$identity" >/dev/null 2>&1 || identity=-
+if ! security find-certificate -c "$identity" >/dev/null 2>&1; then
+  identity=-
+  echo "Signing ad-hoc; run Tools/make-signing-certificate.sh once so macOS stops asking for access after each rebuild."
+fi
 codesign --force --sign "$identity" "$app"
 
 if [[ ${1:-} == --install ]]; then

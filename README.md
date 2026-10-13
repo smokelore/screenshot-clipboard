@@ -32,7 +32,13 @@ This builds the app, puts it in `/Applications`, and starts it. It turns on Open
 
 If macOS asks whether Screenshot Clipboard may access a folder, such as Documents, click **Allow**. The app needs it to read your screenshots.
 
-Without a signing certificate, macOS asks again after every rebuild. To make it remember, create one once: in Keychain Access choose Keychain Access → Certificate Assistant → Create a Certificate, name it `Screenshot Clipboard Local Signing`, set Certificate Type to **Code Signing**, and rebuild. `build.sh` uses it when it's there.
+Without a signing certificate, macOS asks again after every rebuild. To make it remember, run this once, then rebuild:
+
+```sh
+Tools/make-signing-certificate.sh
+```
+
+It adds a self-signed certificate named `Screenshot Clipboard Local Signing` to your login keychain, and `build.sh` signs with it from then on.
 
 If you use a menu bar manager such as Ice or Bartender, the icon may start hidden; move it into view there.
 
