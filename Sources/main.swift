@@ -8,15 +8,20 @@ func screenshotFolder() -> String {
     return ((location ?? "~/Desktop") as NSString).expandingTildeInPath
 }
 
-func copyIfNewScreenshot(_ path: String) {
-    let name = (path as NSString).lastPathComponent
-    guard name.lowercased().hasSuffix(".png"), !name.hasPrefix("."),
-          let attributes = try? FileManager.default.attributesOfItem(atPath: path),
-          let created = attributes[.creationDate] as? Date, created.timeIntervalSinceNow > -10,
-          let data = FileManager.default.contents(atPath: path) else { return }
+func copyIfNewCapture(_ path: String) {
+    let url = URL(fileURLWithPath: path)
+    let kind = url.pathExtension.lowercased()
+    guard ["png", "mov"].contains(kind), !url.lastPathComponent.hasPrefix("."),
+          let attributes = try? FileManager.default.attributesOfItem(atPath: path) else { return }
+    // A recording's file can be created when recording starts, so judge it by when it was last written.
+    guard let date = attributes[kind == "mov" ? .modificationDate : .creationDate] as? Date,
+          date.timeIntervalSinceNow > -10 else { return }
     let item = NSPasteboardItem()
-    item.setData(data, forType: .png)
-    item.setString(URL(fileURLWithPath: path).absoluteString, forType: .fileURL)
+    if kind == "png" {
+        guard let data = FileManager.default.contents(atPath: path) else { return }
+        item.setData(data, forType: .png)
+    }
+    item.setString(url.absoluteString, forType: .fileURL)
     let pasteboard = NSPasteboard.general
     pasteboard.clearContents()
     pasteboard.writeObjects([item])
@@ -66,7 +71,7 @@ final class FolderWatcher {
     }
 }
 
-let watcher = FolderWatcher(onNewFile: copyIfNewScreenshot)
+let watcher = FolderWatcher(onNewFile: copyIfNewCapture)
 watcher.watch(screenshotFolder())
 Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in watcher.watch(screenshotFolder()) }
 
