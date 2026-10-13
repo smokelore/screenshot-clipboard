@@ -13,7 +13,10 @@ commit=$(git rev-parse --short HEAD)
   || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $commit" "$app/Contents/Info.plist"
 for f in Resources/*(N); do [[ $f == Resources/Info.plist ]] || cp "$f" "$app/Contents/Resources/"; done
 swiftc -O -o "$app/Contents/MacOS/ScreenshotClipboard" Sources/*.swift
-codesign --force --sign - "$app"
+# A stable identity keeps macOS privacy grants across rebuilds; ad-hoc signatures change with every build.
+identity="Screenshot Clipboard Local Signing"
+security find-certificate -c "$identity" >/dev/null 2>&1 || identity=-
+codesign --force --sign "$identity" "$app"
 
 if [[ ${1:-} == --install ]]; then
   pkill -x ScreenshotClipboard || true
