@@ -1,5 +1,5 @@
 // Usage: swift Tools/make-icon.swift && iconutil -c icns build/AppIcon.iconset -o Resources/AppIcon.icns
-// Draws the app icon from SF Symbols into build/AppIcon.iconset.
+// Draws the app icon, the camera.viewfinder symbol also used in the menu bar, into build/AppIcon.iconset.
 import AppKit
 
 func symbol(_ name: String, size: CGFloat, color: NSColor) -> NSImage {
@@ -36,12 +36,7 @@ func render(pixels: Int) -> Data {
                ending: NSColor(calibratedRed: 0.20, green: 0.27, blue: 0.86, alpha: 1))!.draw(in: shape, angle: -90)
 
     let scale = CGFloat(pixels) / 1024
-    draw(symbol("camera.viewfinder", size: 390, color: .white), centeredAt: CGPoint(x: 470, y: 565), scale: scale)
-    let badgeCenter = CGPoint(x: 715, y: 305)
-    NSColor.white.setFill()
-    NSBezierPath(ovalIn: CGRect(x: badgeCenter.x - 125, y: badgeCenter.y - 125, width: 250, height: 250)).fill()
-    draw(symbol("doc.on.clipboard.fill", size: 130, color: NSColor(calibratedRed: 0.20, green: 0.27, blue: 0.86, alpha: 1)),
-         centeredAt: badgeCenter, scale: scale)
+    draw(symbol("camera.viewfinder", size: 460, color: .white), centeredAt: CGPoint(x: 512, y: 512), scale: scale)
 
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!
