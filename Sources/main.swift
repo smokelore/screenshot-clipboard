@@ -14,9 +14,12 @@ func copyIfNewScreenshot(_ path: String) {
           let attributes = try? FileManager.default.attributesOfItem(atPath: path),
           let created = attributes[.creationDate] as? Date, created.timeIntervalSinceNow > -10,
           let data = FileManager.default.contents(atPath: path) else { return }
+    let item = NSPasteboardItem()
+    item.setData(data, forType: .png)
+    item.setString(URL(fileURLWithPath: path).absoluteString, forType: .fileURL)
     let pasteboard = NSPasteboard.general
     pasteboard.clearContents()
-    pasteboard.setData(data, forType: .png)
+    pasteboard.writeObjects([item])
 }
 
 final class FolderWatcher {
