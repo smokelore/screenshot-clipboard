@@ -44,9 +44,42 @@ func latestCapture(in folder: String) -> URL? {
     return urls.filter(isCapture).compactMap { url in captureDate(url).map { (url, $0) } }.max { $0.1 < $1.1 }?.0
 }
 
+// Reports changes to files at or under a path, on the main queue, until released.
+final class FileEventStream {
+    private var stream: FSEventStreamRef?
+    private let onEvent: (String, FSEventStreamEventFlags) -> Void
+
+    init(path: String, onEvent: @escaping (String, FSEventStreamEventFlags) -> Void) {
+        self.onEvent = onEvent
+        var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+        let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
+            let events = Unmanaged<FileEventStream>.fromOpaque(info!).takeUnretainedValue()
+            let paths = unsafeBitCast(paths, to: NSArray.self) as! [String]
+            for i in 0..<count where flags[i] & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile) != 0 {
+                events.onEvent(paths[i], flags[i])
+            }
+        }
+        stream = FSEventStreamCreate(
+            nil, callback, &context, [path] as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.05,
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
+        )
+        guard let stream else { return }
+        FSEventStreamSetDispatchQueue(stream, .main)
+        FSEventStreamStart(stream)
+    }
+
+    deinit {
+        guard let stream else { return }
+        FSEventStreamStop(stream)
+        FSEventStreamInvalidate(stream)
+        FSEventStreamRelease(stream)
+    }
+}
+
 final class FolderWatcher {
     private(set) var folder = ""
-    private var stream: FSEventStreamRef?
+    private var events: FileEventStream?
     private let onFileEvent: (String) -> Void
 
     init(onFileEvent: @escaping (String) -> Void) { self.onFileEvent = onFileEvent }
@@ -57,34 +90,12 @@ final class FolderWatcher {
         let path = String(cString: resolved)
         free(resolved)
         guard path != folder else { return }
-        stop()
         folder = path
-        var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
-            let watcher = Unmanaged<FolderWatcher>.fromOpaque(info!).takeUnretainedValue()
-            let paths = unsafeBitCast(paths, to: NSArray.self) as! [String]
-            let wanted = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemRemoved)
-            for i in 0..<count where flags[i] & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile) != 0 && flags[i] & wanted != 0
-                && (paths[i] as NSString).deletingLastPathComponent == watcher.folder {
-                watcher.onFileEvent(paths[i])
-            }
+        let wanted = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemRemoved)
+        events = FileEventStream(path: path) { [weak self] path, flags in
+            guard let self, flags & wanted != 0, (path as NSString).deletingLastPathComponent == folder else { return }
+            onFileEvent(path)
         }
-        guard let stream = FSEventStreamCreate(
-            nil, callback, &context, [path] as CFArray,
-            FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.05,
-            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
-        ) else { return }
-        FSEventStreamSetDispatchQueue(stream, .main)
-        FSEventStreamStart(stream)
-        self.stream = stream
-    }
-
-    func stop() {
-        guard let stream else { return }
-        FSEventStreamStop(stream)
-        FSEventStreamInvalidate(stream)
-        FSEventStreamRelease(stream)
-        self.stream = nil
     }
 }
 
@@ -212,6 +223,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        watcher.watch(screenshotFolder())
         pauseRow.leftTitle = isPaused ? "Resume" : "Pause"
         pauseRow.showsRight = !isPaused
         openAtLoginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -261,6 +273,9 @@ var menuBar: MenuBarController?
 let watcher = FolderWatcher { menuBar?.handleFileEvent($0) }
 menuBar = MenuBarController(watcher: watcher)
 watcher.watch(screenshotFolder())
-Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in watcher.watch(screenshotFolder()) }
+// macOS saves the screenshot settings by renaming a new copy over this file, so watching it reveals location changes.
+let settings = FileEventStream(path: ("~/Library/Preferences/com.apple.screencapture.plist" as NSString).expandingTildeInPath) { _, _ in
+    watcher.watch(screenshotFolder())
+}
 
 app.run()
