@@ -12,8 +12,7 @@ A small Mac menu bar app that copies every new screenshot to the clipboard the m
 The menu bar icon flashes a checkmark after each copy. Drag the icon to drop your latest capture into any app or folder. Click it for the menu:
 
 - **About:** version, author, and a link to this repository.
-- **Pause / Resume:** stop copying until you resume.
-- **Pause for 1 Hour:** stop copying, then resume by itself.
+- **Pause / Resume:** stop copying until you resume. **For 1 Hour**, beside it, resumes by itself.
 - **Copy Latest:** copy the most recent capture again.
 - **Open Folder:** open the screenshot folder.
 - **Open at Login:** start the app when you log in.
