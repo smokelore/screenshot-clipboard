@@ -4,6 +4,7 @@ import AppKit
 final class SplitMenuRow: NSView {
     var leftTitle = "" { didSet { needsDisplay = true } }
     var rightTitle = "" { didSet { needsDisplay = true } }
+    var rightSymbol: String? { didSet { needsDisplay = true } }
     var showsRight = true { didSet { needsDisplay = true } }
     var onLeft: () -> Void = {}
     var onRight: () -> Void = {}
@@ -11,7 +12,21 @@ final class SplitMenuRow: NSView {
     private enum Side { case left, right }
     private var hovered: Side? { didSet { if hovered != oldValue { needsDisplay = true } } }
     private let font = NSFont.menuFont(ofSize: 0)
-    private let inset: CGFloat = 5, textLeading: CGFloat = 17, textTrailing: CGFloat = 10
+    // textLeading matches where macOS 26 starts standard item titles in a section without images or checkmarks.
+    private let inset: CGFloat = 5, textLeading: CGFloat = 24, textTrailing: CGFloat = 10, symbolGap: CGFloat = 4
+
+    private func symbol(_ color: NSColor) -> NSImage? {
+        guard let rightSymbol else { return nil }
+        let configuration = NSImage.SymbolConfiguration(pointSize: font.pointSize, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        return NSImage(systemSymbolName: rightSymbol, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+    }
+
+    private var rightContentWidth: CGFloat {
+        let text = (rightTitle as NSString).size(withAttributes: [.font: font]).width
+        guard let image = symbol(.labelColor) else { return text }
+        return image.size.width + symbolGap + text
+    }
 
     init(width: CGFloat = 200) {
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: 22))
@@ -22,7 +37,7 @@ final class SplitMenuRow: NSView {
 
     private var rightRect: NSRect {
         guard showsRight else { return .zero }
-        let width = (rightTitle as NSString).size(withAttributes: [.font: font]).width + textTrailing * 2
+        let width = rightContentWidth + textTrailing * 2
         return NSRect(x: bounds.maxX - inset - width, y: bounds.minY, width: width, height: bounds.height)
     }
 
@@ -42,9 +57,14 @@ final class SplitMenuRow: NSView {
                 NSColor.selectedContentBackgroundColor.setFill()
                 NSBezierPath(roundedRect: rect.insetBy(dx: 0, dy: 1), xRadius: 5, yRadius: 5).fill()
             }
-            let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: highlighted ? NSColor.selectedMenuItemTextColor : color]
+            let textColor = highlighted ? NSColor.selectedMenuItemTextColor : color
+            let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
             let size = (title as NSString).size(withAttributes: attributes)
-            let x = side == .left ? rect.minX + textLeading - inset : rect.maxX - textTrailing - size.width
+            var x = side == .left ? rect.minX + textLeading - inset : rect.maxX - textTrailing - rightContentWidth
+            if side == .right, let image = symbol(textColor) {
+                image.draw(in: NSRect(x: x, y: rect.midY - image.size.height / 2, width: image.size.width, height: image.size.height))
+                x += image.size.width + symbolGap
+            }
             (title as NSString).draw(at: NSPoint(x: x, y: rect.midY - size.height / 2), withAttributes: attributes)
         }
     }

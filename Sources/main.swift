@@ -158,7 +158,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.addItem(NSMenuItem(title: "About", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(.separator())
-        pauseRow.rightTitle = "For 1 Hour"
+        pauseRow.rightSymbol = "clock"
+        pauseRow.rightTitle = "1 Hour"
         pauseRow.onLeft = { [weak self] in self?.togglePause() }
         pauseRow.onRight = { [weak self] in self?.pauseForHour() }
         let pauseItem = NSMenuItem()
