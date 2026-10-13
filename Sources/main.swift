@@ -1,5 +1,6 @@
 import AppKit
 import CoreServices
+import ServiceManagement
 
 func screenshotFolder() -> String {
     let domain = "com.apple.screencapture" as CFString
@@ -83,6 +84,7 @@ final class FolderWatcher {
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "")
+    private let openAtLoginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
     private let watcher: FolderWatcher
 
     private var isPaused: Bool {
@@ -101,6 +103,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem(title: "Copy Latest Capture", action: #selector(copyLatest), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Screenshots Folder", action: #selector(openFolder), keyEquivalent: ""))
         menu.addItem(.separator())
+        menu.addItem(openAtLoginItem)
         menu.addItem(NSMenuItem(title: "Quit Screenshot Clipboard", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
         statusItem.menu = menu
@@ -114,9 +117,19 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         pauseItem.title = isPaused ? "Resume" : "Pause"
+        openAtLoginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
     @objc private func togglePause() { isPaused.toggle() }
+
+    @objc private func toggleOpenAtLogin() {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled { try service.unregister() } else { try service.register() }
+        } catch {
+            NSSound.beep()
+        }
+    }
 
     @objc private func copyLatest() {
         if let url = latestCapture(in: watcher.folder) { copyCapture(url) }
@@ -128,6 +141,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 }
 
 let app = NSApplication.shared
+if !UserDefaults.standard.bool(forKey: "openAtLoginConfigured") {
+    try? SMAppService.mainApp.register()
+    UserDefaults.standard.set(true, forKey: "openAtLoginConfigured")
+}
 var menuBar: MenuBarController?
 let watcher = FolderWatcher { menuBar?.handleNewFile($0) }
 menuBar = MenuBarController(watcher: watcher)
