@@ -91,28 +91,45 @@ final class FolderWatcher {
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "")
+    private let pauseForHourItem = NSMenuItem(title: "Pause for 1 Hour", action: #selector(pauseForHour), keyEquivalent: "")
     private let openAtLoginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
     private let watcher: FolderWatcher
     private let idleImage = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Screenshot Clipboard")
     private let copiedImage = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Copied")
     private var restoreIcon: DispatchWorkItem?
     private var copied: (path: String, changeCount: Int)?
+    private var resumeTimer: Timer?
+
+    private var pausedUntil: Date? { UserDefaults.standard.object(forKey: "pausedUntil") as? Date }
 
     private var isPaused: Bool {
-        get { UserDefaults.standard.bool(forKey: "paused") }
-        set { UserDefaults.standard.set(newValue, forKey: "paused"); statusItem.button?.appearsDisabled = newValue }
+        UserDefaults.standard.bool(forKey: "paused") || pausedUntil.map { $0 > Date() } ?? false
+    }
+
+    private func setPaused(_ paused: Bool, until: Date? = nil) {
+        UserDefaults.standard.set(paused && until == nil, forKey: "paused")
+        UserDefaults.standard.set(paused ? until : nil, forKey: "pausedUntil")
+        resumeTimer?.invalidate()
+        if paused, let until {
+            resumeTimer = Timer.scheduledTimer(withTimeInterval: until.timeIntervalSinceNow, repeats: false) { [weak self] _ in
+                self?.statusItem.button?.appearsDisabled = false
+            }
+        }
+        statusItem.button?.appearsDisabled = isPaused
     }
 
     init(watcher: FolderWatcher) {
         self.watcher = watcher
         super.init()
         statusItem.button?.image = idleImage
+        if let pausedUntil, pausedUntil > Date() { setPaused(true, until: pausedUntil) }
         statusItem.button?.appearsDisabled = isPaused
         let menu = NSMenu()
         menu.delegate = self
         menu.addItem(NSMenuItem(title: "About", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(pauseItem)
+        menu.addItem(pauseForHourItem)
         menu.addItem(NSMenuItem(title: "Copy Latest", action: #selector(copyLatest), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Folder", action: #selector(openFolder), keyEquivalent: ""))
         menu.addItem(.separator())
@@ -149,10 +166,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         pauseItem.title = isPaused ? "Resume" : "Pause"
+        pauseForHourItem.isHidden = isPaused
         openAtLoginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
-    @objc private func togglePause() { isPaused.toggle() }
+    @objc private func togglePause() { setPaused(!isPaused) }
+
+    @objc private func pauseForHour() { setPaused(true, until: Date().addingTimeInterval(3600)) }
 
     @objc private func toggleOpenAtLogin() {
         let service = SMAppService.mainApp
