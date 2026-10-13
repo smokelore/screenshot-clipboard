@@ -88,73 +88,6 @@ final class FolderWatcher {
     }
 }
 
-// One clickable part of a menu row, highlighted on hover the way a menu item is.
-final class MenuRowButton: NSView {
-    var onClick: () -> Void = {}
-    var title: String {
-        get { label.stringValue }
-        set { label.stringValue = newValue }
-    }
-    private let label = NSTextField(labelWithString: "")
-    private let textColor: NSColor
-    private var isHighlighted = false {
-        didSet { label.textColor = isHighlighted ? .selectedMenuItemTextColor : textColor; needsDisplay = true }
-    }
-
-    init(textColor: NSColor, alignment: NSTextAlignment, leadingInset: CGFloat) {
-        self.textColor = textColor
-        super.init(frame: .zero)
-        label.font = .menuFont(ofSize: 0)
-        label.textColor = textColor
-        label.alignment = alignment
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: leadingInset),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
-    }
-
-    override func mouseEntered(with event: NSEvent) { isHighlighted = true }
-    override func mouseExited(with event: NSEvent) { isHighlighted = false }
-
-    override func mouseUp(with event: NSEvent) {
-        isHighlighted = false
-        enclosingMenuItem?.menu?.cancelTracking()
-        onClick()
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard isHighlighted else { return }
-        NSColor.selectedContentBackgroundColor.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 1), xRadius: 5, yRadius: 5).fill()
-    }
-}
-
-// A menu item holding two actions side by side.
-func splitMenuItem(_ left: MenuRowButton, _ right: MenuRowButton) -> NSMenuItem {
-    left.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    right.setContentHuggingPriority(.required, for: .horizontal)
-    let row = NSStackView(views: [left, right])
-    row.spacing = 0
-    row.distribution = .fill
-    row.edgeInsets = NSEdgeInsets(top: 0, left: 5, bottom: 0, right: 5)
-    row.frame = NSRect(x: 0, y: 0, width: 200, height: 22)
-    row.autoresizingMask = .width
-    let item = NSMenuItem()
-    item.view = row
-    return item
-}
-
 // Sits over the menu bar button so that dragging carries the latest capture out and clicking opens the menu.
 final class StatusButtonOverlay: NSView, NSDraggingSource {
     var latestCapture: () -> URL? = { nil }
@@ -188,8 +121,7 @@ final class StatusButtonOverlay: NSView, NSDraggingSource {
 
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    private let pauseButton = MenuRowButton(textColor: .labelColor, alignment: .left, leadingInset: 17)
-    private let pauseForHourButton = MenuRowButton(textColor: .secondaryLabelColor, alignment: .right, leadingInset: 10)
+    private let pauseRow = SplitMenuRow()
     private let openAtLoginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
     private let watcher: FolderWatcher
     private let menu = NSMenu()
@@ -226,10 +158,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.addItem(NSMenuItem(title: "About", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(.separator())
-        pauseButton.onClick = { [weak self] in self?.togglePause() }
-        pauseForHourButton.title = "For 1 Hour"
-        pauseForHourButton.onClick = { [weak self] in self?.pauseForHour() }
-        menu.addItem(splitMenuItem(pauseButton, pauseForHourButton))
+        pauseRow.rightTitle = "For 1 Hour"
+        pauseRow.onLeft = { [weak self] in self?.togglePause() }
+        pauseRow.onRight = { [weak self] in self?.pauseForHour() }
+        let pauseItem = NSMenuItem()
+        pauseItem.view = pauseRow
+        menu.addItem(pauseItem)
         menu.addItem(NSMenuItem(title: "Copy Latest", action: #selector(copyLatest), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Folder", action: #selector(openFolder), keyEquivalent: ""))
         menu.addItem(.separator())
@@ -276,8 +210,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        pauseButton.title = isPaused ? "Resume" : "Pause"
-        pauseForHourButton.isHidden = isPaused
+        pauseRow.leftTitle = isPaused ? "Resume" : "Pause"
+        pauseRow.showsRight = !isPaused
         openAtLoginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
