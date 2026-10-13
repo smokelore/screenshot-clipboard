@@ -23,6 +23,7 @@ codesign --force --sign "$identity" "$app"
 
 if [[ ${1:-} == --install ]]; then
   pkill -x ScreenshotClipboard || true
+  while pgrep -x ScreenshotClipboard >/dev/null; do sleep 0.1; done
   rm -rf "/Applications/Screenshot Clipboard.app"
   cp -R "$app" /Applications/
   open "/Applications/Screenshot Clipboard.app"
