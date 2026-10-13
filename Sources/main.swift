@@ -88,12 +88,44 @@ final class FolderWatcher {
     }
 }
 
+// Sits over the menu bar button so that dragging carries the latest capture out and clicking opens the menu.
+final class StatusButtonOverlay: NSView, NSDraggingSource {
+    var latestCapture: () -> URL? = { nil }
+    var openMenu: () -> Void = {}
+
+    override func mouseDown(with event: NSEvent) {
+        guard let window else { return }
+        let start = event.locationInWindow
+        while let next = window.nextEvent(matching: [.leftMouseUp, .leftMouseDragged]) {
+            if next.type == .leftMouseUp { openMenu(); return }
+            let dx = next.locationInWindow.x - start.x, dy = next.locationInWindow.y - start.y
+            if dx * dx + dy * dy > 16, let url = latestCapture() {
+                beginDraggingSession(with: [draggingItem(for: url)], event: event, source: self)
+                return
+            }
+        }
+    }
+
+    override func rightMouseDown(with event: NSEvent) { openMenu() }
+
+    private func draggingItem(for url: URL) -> NSDraggingItem {
+        let image = NSImage(contentsOf: url) ?? NSWorkspace.shared.icon(forFile: url.path)
+        let width: CGFloat = 96, height = width * image.size.height / max(image.size.width, 1)
+        let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+        item.setDraggingFrame(NSRect(x: bounds.midX - width / 2, y: bounds.midY - height / 2, width: width, height: height), contents: image)
+        return item
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
+}
+
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "")
     private let pauseForHourItem = NSMenuItem(title: "Pause for 1 Hour", action: #selector(pauseForHour), keyEquivalent: "")
     private let openAtLoginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
     private let watcher: FolderWatcher
+    private let menu = NSMenu()
     private let idleImage = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Screenshot Clipboard")
     private let copiedImage = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Copied")
     private var restoreIcon: DispatchWorkItem?
@@ -124,7 +156,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         statusItem.button?.image = idleImage
         if let pausedUntil, pausedUntil > Date() { setPaused(true, until: pausedUntil) }
         statusItem.button?.appearsDisabled = isPaused
-        let menu = NSMenu()
         menu.delegate = self
         menu.addItem(NSMenuItem(title: "About", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(.separator())
@@ -136,7 +167,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(openAtLoginItem)
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
-        statusItem.menu = menu
+
+        guard let button = statusItem.button else { return }
+        let overlay = StatusButtonOverlay(frame: button.bounds)
+        overlay.autoresizingMask = [.width, .height]
+        overlay.latestCapture = { [weak self] in self.flatMap { latestCapture(in: $0.watcher.folder) } }
+        overlay.openMenu = { [weak self] in
+            guard let self else { return }
+            statusItem.menu = menu
+            button.performClick(nil)
+            statusItem.menu = nil
+        }
+        button.addSubview(overlay)
     }
 
     func handleFileEvent(_ path: String) {
