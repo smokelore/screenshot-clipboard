@@ -169,8 +169,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem(title: "Open Folder", action: #selector(openFolder), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(openAtLoginItem)
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
+        // Not NSApplication.terminate(_:): macOS 26 gives that action an icon, which indents its whole section.
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
+        for item in menu.items { item.target = self }
 
         guard let button = statusItem.button else { return }
         let overlay = StatusButtonOverlay(frame: button.bounds)
@@ -228,6 +229,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             NSSound.beep()
         }
     }
+
+    @objc private func quit() { NSApp.terminate(nil) }
 
     @objc private func copyLatest() {
         if let url = latestCapture(in: watcher.folder) { copy(url) }
