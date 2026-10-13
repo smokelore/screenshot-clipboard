@@ -86,6 +86,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "")
     private let openAtLoginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
     private let watcher: FolderWatcher
+    private let idleImage = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Screenshot Clipboard")
+    private let copiedImage = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Copied")
+    private var restoreIcon: DispatchWorkItem?
 
     private var isPaused: Bool {
         get { UserDefaults.standard.bool(forKey: "paused") }
@@ -95,7 +98,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     init(watcher: FolderWatcher) {
         self.watcher = watcher
         super.init()
-        statusItem.button?.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Screenshot Clipboard")
+        statusItem.button?.image = idleImage
         statusItem.button?.appearsDisabled = isPaused
         let menu = NSMenu()
         menu.delegate = self
@@ -112,7 +115,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func handleNewFile(_ path: String) {
         let url = URL(fileURLWithPath: path)
         guard !isPaused, isCapture(url), let date = captureDate(url), date.timeIntervalSinceNow > -10 else { return }
-        copyCapture(url)
+        if copyCapture(url) { flashIcon() }
+    }
+
+    private func flashIcon() {
+        statusItem.button?.image = copiedImage
+        restoreIcon?.cancel()
+        let restore = DispatchWorkItem { [weak self] in self?.statusItem.button?.image = self?.idleImage }
+        restoreIcon = restore
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: restore)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -132,7 +143,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func copyLatest() {
-        if let url = latestCapture(in: watcher.folder) { copyCapture(url) }
+        if let url = latestCapture(in: watcher.folder), copyCapture(url) { flashIcon() }
     }
 
     @objc private func openFolder() {
