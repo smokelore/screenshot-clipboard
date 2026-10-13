@@ -36,7 +36,7 @@ func render(pixels: Int) -> Data {
                ending: NSColor(calibratedRed: 0.20, green: 0.27, blue: 0.86, alpha: 1))!.draw(in: shape, angle: -90)
 
     let scale = CGFloat(pixels) / 1024
-    draw(symbol("camera.viewfinder", size: 460, color: .white), centeredAt: CGPoint(x: 512, y: 512), scale: scale)
+    draw(symbol("camera.viewfinder", size: 600, color: .white), centeredAt: CGPoint(x: 512, y: 512), scale: scale)
 
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!
