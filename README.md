@@ -45,3 +45,7 @@ If you use a menu bar manager such as Ice or Bartender, the icon may start hidde
 ## Removing it
 
 Untick **Open at Login**, choose **Quit**, then drag `/Applications/Screenshot Clipboard.app` to the Trash.
+
+## License
+
+[MIT](LICENSE)
