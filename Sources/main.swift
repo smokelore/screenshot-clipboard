@@ -8,23 +8,32 @@ func screenshotFolder() -> String {
     return ((location ?? "~/Desktop") as NSString).expandingTildeInPath
 }
 
-func copyIfNewCapture(_ path: String) {
-    let url = URL(fileURLWithPath: path)
-    let kind = url.pathExtension.lowercased()
-    guard ["png", "mov"].contains(kind), !url.lastPathComponent.hasPrefix("."),
-          let attributes = try? FileManager.default.attributesOfItem(atPath: path) else { return }
-    // A recording's file can be created when recording starts, so judge it by when it was last written.
-    guard let date = attributes[kind == "mov" ? .modificationDate : .creationDate] as? Date,
-          date.timeIntervalSinceNow > -10 else { return }
+func isCapture(_ url: URL) -> Bool {
+    ["png", "mov"].contains(url.pathExtension.lowercased()) && !url.lastPathComponent.hasPrefix(".")
+}
+
+// A recording's file can be created when recording starts, so judge it by when it was last written.
+func captureDate(_ url: URL) -> Date? {
+    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+    return attributes?[url.pathExtension.lowercased() == "mov" ? .modificationDate : .creationDate] as? Date
+}
+
+@discardableResult
+func copyCapture(_ url: URL) -> Bool {
     let item = NSPasteboardItem()
-    if kind == "png" {
-        guard let data = FileManager.default.contents(atPath: path) else { return }
+    if url.pathExtension.lowercased() == "png" {
+        guard let data = FileManager.default.contents(atPath: url.path) else { return false }
         item.setData(data, forType: .png)
     }
     item.setString(url.absoluteString, forType: .fileURL)
     let pasteboard = NSPasteboard.general
     pasteboard.clearContents()
-    pasteboard.writeObjects([item])
+    return pasteboard.writeObjects([item])
+}
+
+func latestCapture(in folder: String) -> URL? {
+    let urls = (try? FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: folder), includingPropertiesForKeys: nil)) ?? []
+    return urls.filter(isCapture).compactMap { url in captureDate(url).map { (url, $0) } }.max { $0.1 < $1.1 }?.0
 }
 
 final class FolderWatcher {
@@ -71,9 +80,58 @@ final class FolderWatcher {
     }
 }
 
-let watcher = FolderWatcher(onNewFile: copyIfNewCapture)
+final class MenuBarController: NSObject, NSMenuDelegate {
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "")
+    private let watcher: FolderWatcher
+
+    private var isPaused: Bool {
+        get { UserDefaults.standard.bool(forKey: "paused") }
+        set { UserDefaults.standard.set(newValue, forKey: "paused"); statusItem.button?.appearsDisabled = newValue }
+    }
+
+    init(watcher: FolderWatcher) {
+        self.watcher = watcher
+        super.init()
+        statusItem.button?.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Screenshot Clipboard")
+        statusItem.button?.appearsDisabled = isPaused
+        let menu = NSMenu()
+        menu.delegate = self
+        menu.addItem(pauseItem)
+        menu.addItem(NSMenuItem(title: "Copy Latest Capture", action: #selector(copyLatest), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Open Screenshots Folder", action: #selector(openFolder), keyEquivalent: ""))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Quit Screenshot Clipboard", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
+        statusItem.menu = menu
+    }
+
+    func handleNewFile(_ path: String) {
+        let url = URL(fileURLWithPath: path)
+        guard !isPaused, isCapture(url), let date = captureDate(url), date.timeIntervalSinceNow > -10 else { return }
+        copyCapture(url)
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        pauseItem.title = isPaused ? "Resume" : "Pause"
+    }
+
+    @objc private func togglePause() { isPaused.toggle() }
+
+    @objc private func copyLatest() {
+        if let url = latestCapture(in: watcher.folder) { copyCapture(url) }
+    }
+
+    @objc private func openFolder() {
+        NSWorkspace.shared.open(URL(fileURLWithPath: watcher.folder))
+    }
+}
+
+let app = NSApplication.shared
+var menuBar: MenuBarController?
+let watcher = FolderWatcher { menuBar?.handleNewFile($0) }
+menuBar = MenuBarController(watcher: watcher)
 watcher.watch(screenshotFolder())
 Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in watcher.watch(screenshotFolder()) }
 
-NSApplication.shared.setActivationPolicy(.prohibited)
-NSApplication.shared.run()
+app.run()
