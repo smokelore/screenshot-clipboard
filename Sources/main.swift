@@ -47,9 +47,9 @@ func latestCapture(in folder: String) -> URL? {
 final class FolderWatcher {
     private(set) var folder = ""
     private var stream: FSEventStreamRef?
-    private let onNewFile: (String) -> Void
+    private let onFileEvent: (String) -> Void
 
-    init(onNewFile: @escaping (String) -> Void) { self.onNewFile = onNewFile }
+    init(onFileEvent: @escaping (String) -> Void) { self.onFileEvent = onFileEvent }
 
     func watch(_ path: String) {
         // FSEvents reports real paths such as /private/tmp, which NSString's symlink resolution strips.
@@ -63,10 +63,10 @@ final class FolderWatcher {
         let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
             let watcher = Unmanaged<FolderWatcher>.fromOpaque(info!).takeUnretainedValue()
             let paths = unsafeBitCast(paths, to: NSArray.self) as! [String]
-            let wanted = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRenamed)
+            let wanted = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemRemoved)
             for i in 0..<count where flags[i] & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile) != 0 && flags[i] & wanted != 0
                 && (paths[i] as NSString).deletingLastPathComponent == watcher.folder {
-                watcher.onNewFile(paths[i])
+                watcher.onFileEvent(paths[i])
             }
         }
         guard let stream = FSEventStreamCreate(
@@ -96,6 +96,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let idleImage = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Screenshot Clipboard")
     private let copiedImage = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Copied")
     private var restoreIcon: DispatchWorkItem?
+    private var copied: (path: String, changeCount: Int)?
 
     private var isPaused: Bool {
         get { UserDefaults.standard.bool(forKey: "paused") }
@@ -119,10 +120,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         statusItem.menu = menu
     }
 
-    func handleNewFile(_ path: String) {
+    func handleFileEvent(_ path: String) {
+        let pasteboard = NSPasteboard.general
+        if !FileManager.default.fileExists(atPath: path) {
+            if let copied, copied.path == path, copied.changeCount == pasteboard.changeCount { pasteboard.clearContents() }
+            return
+        }
         let url = URL(fileURLWithPath: path)
         guard !isPaused, isCapture(url), let date = captureDate(url), date.timeIntervalSinceNow > -10 else { return }
-        if copyCapture(url) { flashIcon() }
+        copy(url)
+    }
+
+    private func copy(_ url: URL) {
+        guard copyCapture(url) else { return }
+        copied = (url.path, NSPasteboard.general.changeCount)
+        flashIcon()
     }
 
     private func flashIcon() {
@@ -150,7 +162,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func copyLatest() {
-        if let url = latestCapture(in: watcher.folder), copyCapture(url) { flashIcon() }
+        if let url = latestCapture(in: watcher.folder) { copy(url) }
     }
 
     @objc private func openFolder() {
@@ -164,7 +176,7 @@ if !UserDefaults.standard.bool(forKey: "openAtLoginConfigured") {
     UserDefaults.standard.set(true, forKey: "openAtLoginConfigured")
 }
 var menuBar: MenuBarController?
-let watcher = FolderWatcher { menuBar?.handleNewFile($0) }
+let watcher = FolderWatcher { menuBar?.handleFileEvent($0) }
 menuBar = MenuBarController(watcher: watcher)
 watcher.watch(screenshotFolder())
 Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in watcher.watch(screenshotFolder()) }
