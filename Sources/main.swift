@@ -110,6 +110,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         statusItem.button?.appearsDisabled = isPaused
         let menu = NSMenu()
         menu.delegate = self
+        menu.addItem(NSMenuItem(title: "About", action: #selector(showAbout), keyEquivalent: ""))
+        menu.addItem(.separator())
         menu.addItem(pauseItem)
         menu.addItem(NSMenuItem(title: "Copy Latest", action: #selector(copyLatest), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Folder", action: #selector(openFolder), keyEquivalent: ""))
@@ -163,6 +165,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func copyLatest() {
         if let url = latestCapture(in: watcher.folder) { copy(url) }
+    }
+
+    @objc private func showAbout() {
+        let repository = "https://github.com/smokelore/screenshot-clipboard"
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let credits = NSAttributedString(string: repository, attributes: [
+            .link: URL(string: repository)!, .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize), .paragraphStyle: paragraph,
+        ])
+        if #available(macOS 14, *) { NSApp.activate() } else { NSApp.activate(ignoringOtherApps: true) }
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
     }
 
     @objc private func openFolder() {
