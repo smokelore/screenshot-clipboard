@@ -19,6 +19,12 @@ func captureDate(_ url: URL) -> Date? {
     return attributes?[url.pathExtension.lowercased() == "mov" ? .modificationDate : .creationDate] as? Date
 }
 
+// Escaped the way Terminal escapes a dragged-in file, so the pasted path works in a shell and in Claude Code.
+func shellEscaped(_ path: String) -> String {
+    let special = Set(" \\'\"()[]{}&;|<>*?$`!#~")
+    return String(path.flatMap { special.contains($0) ? ["\\", $0] : [$0] })
+}
+
 @discardableResult
 func copyCapture(_ url: URL) -> Bool {
     let item = NSPasteboardItem()
@@ -27,6 +33,7 @@ func copyCapture(_ url: URL) -> Bool {
         item.setData(data, forType: .png)
     }
     item.setString(url.absoluteString, forType: .fileURL)
+    item.setString(shellEscaped(url.path), forType: .string)
     let pasteboard = NSPasteboard.general
     pasteboard.clearContents()
     return pasteboard.writeObjects([item])
